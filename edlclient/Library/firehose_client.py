@@ -15,7 +15,7 @@ from struct import unpack, pack
 from edlclient.Library.firehose import firehose
 from edlclient.Library.xmlparser import xmlparser
 from edlclient.Library.utils import do_tcp_server
-from edlclient.Library.utils import LogBase, getint
+from edlclient.Library.utils import LogBase, getint, progress
 from edlclient.Config.qualcomm_config import memory_type
 from edlclient.Config.qualcomm_config import infotbl, msmids, secureboottbl, sochw
 import fnmatch
@@ -883,9 +883,9 @@ class firehose_client(metaclass=LogBase):
         elif cmd == "patch":
             if not self.check_param(["<partitionname>", "<filename>"]):
                 return False
-            partitionname = options["<partitionname>"]
+            partition = options["<partitionname>"]
             filename = options["<filename>"]
-            if ",":
+            if "," in filename:
                 self.error(f"Error: Commas are not allowed in partition names. Can only patch one partition at a time.")
                 return False
             if not os.path.exists(filename):
@@ -897,10 +897,71 @@ class firehose_client(metaclass=LogBase):
             if res[0]:
                 lun = res[1]
                 rpartition = res[2]
-                #if self.firehose.cmd_read(lun, rpartition.sector, rpartition.sectors, partfilename):
-                #    self.printer(
-                #        f"Dumped sector {str(rpartition.sector)} with sector count {str(rpartition.sectors)} " +
-                #        f"as {partfilename}.")
+                partition_size = rpartition.sectors * self.cfg.SECTOR_SIZE_IN_BYTES
+                print(f"Found '{partition}' partition on lun={lun}, start sector {str(rpartition.sector)}, total sectors {str(rpartition.sectors)}, {partition_size} bytes")
+
+                fin = open(filename, 'rb')
+                data = fin.read()
+                fin.close()
+
+                file_size = len(data)
+                print(f"Loaded '{filename}' with size {file_size} bytes")
+                if file_size > partition_size:
+                    self.error(f"Error: File is too large for partition size {partition_size} bytes")
+                    return False
+
+                """
+                # loop to patch partition byte-by-byte
+                size_in_bytes = 1
+                progbar = progress(self.cfg.SECTOR_SIZE_IN_BYTES)
+                progbar.show_progress(prefix="Write", pos=0, total=rpartition.sectors, display=True)
+                for relative_sector in range(rpartition.sectors):
+                    sector = rpartition.sector + relative_sector
+                    for offset in range(self.cfg.SECTOR_SIZE_IN_BYTES):
+                        i = relative_sector * self.cfg.SECTOR_SIZE_IN_BYTES + offset
+                        value = 0x0
+                        if i < file_size:
+                            value = data[i]
+                        if self.firehose.cmd_patch(lun, sector, offset, value, size_in_bytes, False):
+                            #print(f"Patched sector {str(sector)}, offset {str(offset)} with value {value}, " +
+                            #       f"size in bytes {size_in_bytes}.")
+                            pass
+                        else:
+                            print(f"Error on writing sector {str(sector)}, offset {str(offset)} with value {value}, " +
+                                   f"size in bytes {size_in_bytes}.")
+                        #if relative_sector == 0 or relative_sector == rpartition.sectors - 1:
+                        #    print("i", i, sector, offset, bytes([value]))
+                    progbar.show_progress(prefix="Write", pos=relative_sector+1, total=rpartition.sectors, display=True)
+
+                """
+                # test patch of last byte
+                final_sector = rpartition.sectors - 1
+                final_offset = self.cfg.SECTOR_SIZE_IN_BYTES - 1
+                print(final_sector, final_offset)
+
+                def bytes_to_value(bstr):
+                    value = 0
+                    for i in range(len(bstr)):
+                        value += bstr[i] * 16**(2*i)
+                    print(bstr, hex(value))
+                    return value
+
+                #b = b'\x11\x22\x33\x44\x55'
+                b = b'\xFF\x01\xFF\x02\xFF\x03'
+                value = bytes_to_value(b)
+                size_in_bytes = len(b)
+                sector = rpartition.sector + final_sector
+                offset = self.cfg.SECTOR_SIZE_IN_BYTES - size_in_bytes
+                #offset = 504
+                #return True
+                #if True:
+                if self.firehose.cmd_patch(lun, sector, offset, value, size_in_bytes, True):
+                    print(f"Patched sector {str(sector)}, offset {str(offset)} with value {value}, " +
+                          f"size in bytes {size_in_bytes}.")
+                else:
+                    print(f"Error on writing sector {str(sector)}, offset {str(offset)} with value {value}, " +
+                          f"size in bytes {size_in_bytes}.")
+
             else:
                 fpartitions = res[1]
                 self.error(f"Error: Couldn't detect partition: {partition}\nAvailable partitions:")
