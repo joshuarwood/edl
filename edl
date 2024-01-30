@@ -155,7 +155,7 @@ def parse_cmd(rargs):
     cmds = ["server", "printgpt", "gpt", "r", "rl", "rf", "rs", "w", "wl", "wf", "ws", "e", "es", "ep", "footer",
             "peek", "peekhex", "peekdword", "peekqword", "memtbl", "poke", "pokehex", "pokedword", "pokeqword",
             "memcpy", "secureboot", "pbl", "qfp", "getstorageinfo", "setbootablestoragedrive", "setactiveslot",
-            "send", "xml", "rawxml", "reset", "nop", "modules", "memorydump", "provision", "qfil"]
+            "send", "xml", "rawxml", "reset", "nop", "modules", "memorydump", "provision", "qfil", "patch"]
     for cmd in cmds:
         if rargs[cmd]:
             return cmd
