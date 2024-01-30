@@ -880,6 +880,38 @@ class firehose_client(metaclass=LogBase):
             if not self.check_param(["<xmlstring>"]):
                 return False
             return self.firehose.cmd_rawxml(options["<xmlstring>"])
+        elif cmd == "patch":
+            if not self.check_param(["<partitionname>", "<filename>"]):
+                return False
+            partitionname = options["<partitionname>"]
+            filename = options["<filename>"]
+            if ",":
+                self.error(f"Error: Commas are not allowed in partition names. Can only patch one partition at a time.")
+                return False
+            if not os.path.exists(filename):
+                self.error(f"Error: Couldn't find file: {filename}")
+                return False
+
+            # detect the partition
+            res = self.firehose.detect_partition(options, partition)
+            if res[0]:
+                lun = res[1]
+                rpartition = res[2]
+                #if self.firehose.cmd_read(lun, rpartition.sector, rpartition.sectors, partfilename):
+                #    self.printer(
+                #        f"Dumped sector {str(rpartition.sector)} with sector count {str(rpartition.sectors)} " +
+                #        f"as {partfilename}.")
+            else:
+                fpartitions = res[1]
+                self.error(f"Error: Couldn't detect partition: {partition}\nAvailable partitions:")
+                for lun in fpartitions:
+                    for rpartition in fpartitions[lun]:
+                        if self.cfg.MemoryName == "emmc":
+                            self.error("\t" + rpartition)
+                        else:
+                            self.error(lun + ":\t" + rpartition)
+                return False
+            return True
         elif cmd == "send":
             if not self.check_param(["<command>"]):
                 return False
