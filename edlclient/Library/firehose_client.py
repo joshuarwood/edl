@@ -910,28 +910,66 @@ class firehose_client(metaclass=LogBase):
                     self.error(f"Error: File is too large for partition size {partition_size} bytes")
                     return False
 
-                """
-                # loop to patch partition byte-by-byte
-                size_in_bytes = 1
+                # helper function for converting bytes to the value needed by the patch command
+                def bytes_to_value(bstr):
+                    value = 0
+                    for i in range(len(bstr)):
+                        value += bstr[i] * 16**(2*i)
+                    #print(bstr, hex(value))
+                    return value
+
+
+                # loop to patch partition in 4 byte steps. This is the largest size supported by patch.
+                step = 4
+                psector = 0
+                write_sectors = int(file_size / self.cfg.SECTOR_SIZE_IN_BYTES) 
                 progbar = progress(self.cfg.SECTOR_SIZE_IN_BYTES)
-                progbar.show_progress(prefix="Write", pos=0, total=rpartition.sectors, display=True)
-                for relative_sector in range(rpartition.sectors):
-                    sector = rpartition.sector + relative_sector
-                    for offset in range(self.cfg.SECTOR_SIZE_IN_BYTES):
-                        i = relative_sector * self.cfg.SECTOR_SIZE_IN_BYTES + offset
-                        value = 0x0
-                        if i < file_size:
-                            value = data[i]
-                        if self.firehose.cmd_patch(lun, sector, offset, value, size_in_bytes, False):
-                            #print(f"Patched sector {str(sector)}, offset {str(offset)} with value {value}, " +
-                            #       f"size in bytes {size_in_bytes}.")
-                            pass
-                        else:
-                            print(f"Error on writing sector {str(sector)}, offset {str(offset)} with value {value}, " +
-                                   f"size in bytes {size_in_bytes}.")
-                        #if relative_sector == 0 or relative_sector == rpartition.sectors - 1:
-                        #    print("i", i, sector, offset, bytes([value]))
-                    progbar.show_progress(prefix="Write", pos=relative_sector+1, total=rpartition.sectors, display=True)
+                progbar.show_progress(prefix="Write", pos=0, total=write_sectors, display=True)
+                for istart in range(0, partition_size, step):
+                    sector = rpartition.sector + int(istart / self.cfg.SECTOR_SIZE_IN_BYTES)
+                    offset = istart % self.cfg.SECTOR_SIZE_IN_BYTES
+
+                    #print("sector", sector, "offset", offset)
+                    value = 0x0
+                    size_in_bytes = 1
+                    iend = istart + step
+                    if iend <= file_size:
+                        value = bytes_to_value(data[istart:iend])
+                        size_in_bytes = step
+                    elif istart < file_size:
+                        n = file_size - istart
+                        value = bytes_to_value(data[istart:file_size] + (step - n) * '\x00') 
+                        size_in_bytes = step
+                        #print(data[istart:istart+10])
+                        #return True
+
+                    #if self.firehose.cmd_patch(lun, sector, offset, value, size_in_bytes, True):
+                        #print(f"Patched sector {str(sector)}, offset {str(offset)} with value {value}, " +
+                        #       f"size in bytes {size_in_bytes}.")
+                    #    pass
+                    #else:
+                    #    print(f"Error on writing sector {str(sector)}, offset {str(offset)} with value {value}, " +
+                    #           f"size in bytes {size_in_bytes}.")
+                    if sector != psector:
+                        progbar.show_progress(prefix="Write", pos=(sector - rpartition.sector)+1, total=write_sectors, display=True)
+                        psector = sector
+                    if iend >= file_size:
+                        return True
+                    #if (sector - rpartition.sector) > 3:
+                    #    return True
+
+                """
+                rin = open('recovery_test.img', 'rb')
+                ref = rin.read()
+                rin.close()
+                ref_size = len(ref)
+                for istart in range(ref_size):
+                    sector = rpartition.sector + int(istart / self.cfg.SECTOR_SIZE_IN_BYTES)
+                    offset = istart % self.cfg.SECTOR_SIZE_IN_BYTES
+                    print(sector, offset)
+                    if sector - rpartition.sector > 3:
+                        return True
+                """
 
                 """
                 # test patch of last byte
@@ -939,28 +977,22 @@ class firehose_client(metaclass=LogBase):
                 final_offset = self.cfg.SECTOR_SIZE_IN_BYTES - 1
                 print(final_sector, final_offset)
 
-                def bytes_to_value(bstr):
-                    value = 0
-                    for i in range(len(bstr)):
-                        value += bstr[i] * 16**(2*i)
-                    print(bstr, hex(value))
-                    return value
-
                 #b = b'\x11\x22\x33\x44\x55'
-                b = b'\xFF\x01\xFF\x02\xFF\x03'
-                value = bytes_to_value(b)
-                size_in_bytes = len(b)
+                #b = b'\xFF\x01\xFF\x02\xFF\x03'
+                #b = b'\x01\xFF\x02\xFF\x03'
+                #value = bytes_to_value(b)
+                #size_in_bytes = len(b)
+                value = 0x0
+                size_in_bytes = 6
                 sector = rpartition.sector + final_sector
                 offset = self.cfg.SECTOR_SIZE_IN_BYTES - size_in_bytes
-                #offset = 504
-                #return True
-                #if True:
                 if self.firehose.cmd_patch(lun, sector, offset, value, size_in_bytes, True):
                     print(f"Patched sector {str(sector)}, offset {str(offset)} with value {value}, " +
                           f"size in bytes {size_in_bytes}.")
                 else:
                     print(f"Error on writing sector {str(sector)}, offset {str(offset)} with value {value}, " +
                           f"size in bytes {size_in_bytes}.")
+                """
 
             else:
                 fpartitions = res[1]
